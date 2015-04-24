@@ -13,15 +13,16 @@ namespace Ore.Compiler
 {
     public static class Decompiler
     {
-        public static void InstallPlugin(JObject json, byte[] buffer)
+        public static void InstallPlugin(Ore ore, byte[] buffer)
         {
-            var installDirectory = "C:\\ores\\" + json["name"];
+            var installDirectory = "C:\\ores\\" + ore.Name + "\\";
+            Directory.CreateDirectory(installDirectory);
             Program.WriteLine("Writing ore data to library...");
-            File.WriteAllText(installDirectory + "data.ore", json.ToString(Formatting.Indented));
-            DecompilePluginBuffer(buffer, installDirectory);
+            File.WriteAllText(installDirectory + "data.ore", JObject.FromObject(ore).ToString(Formatting.Indented));
+            DecompilePluginBuffer(buffer, installDirectory, ore);
         }
 
-        public static void DecompilePluginBuffer(byte[] buffer, string directory)
+        public static void DecompilePluginBuffer(byte[] buffer, string directory, Ore ore)
         {
             Program.WriteLine("Beginning decompile process...");
             // for compiling the ore, there are certain steps.
@@ -32,27 +33,23 @@ namespace Ore.Compiler
             // now lets reverse the library
             try
             { 
-                using (var ms = new MemoryStream(buffer)) // figure out why this stops
+                using (var ms = new MemoryStream(ZlibStream.UncompressBuffer(buffer))) 
                 {
                     Program.WriteLine("Reading plugin library...");
                     var ol = ms.ReadInt(); // ore length
-                    Console.WriteLine(ol);
-                    var on = ms.ReadString(); // ore name
-                    Console.WriteLine(on);
-                    var of = ms.ReadUByteArray(ol - 4);
-                    File.WriteAllBytes(directory + on + ".dll", of);
+                    var of = ms.ReadUByteArray(ol);
+                    File.WriteAllBytes(directory + ore.Name + ".dll", of);
                     Program.WriteLine("Finished installing plugin.");
 
-                    var dc = ms.ReadUByte(); // dependency count
-                    Program.WriteLine("Installing {0} dependencies for {1}.", dc, on);
+                    var dc = ore.Dependencies.Count;
+                    Program.WriteLine("Installing {0} dependencies.", dc);
                     for (var i = 0; i < dc; i++)
                     {
                         var dl = ms.ReadInt();
-                        var dn = ms.ReadString();
-                        var df = ms.ReadUByteArray(dl - 4);
-                        Program.WriteLine("Copying {0}...", dn);
+                        var df = ms.ReadUByteArray(dl);
+                        Program.WriteLine("Copying {0}...", ore.Dependencies[i]);
 
-                        File.WriteAllBytes(directory + dn + ".dll", df);
+                        File.WriteAllBytes(directory + ore.Dependencies[i], df);
                     }
                     Program.WriteLine("Finished installing dependencies.");
                     Program.WriteLine("Installation successful.");
@@ -60,7 +57,7 @@ namespace Ore.Compiler
             }
             catch(Exception e)
             {
-                Program.WriteLine("An error occured and installation has been halted with the error: {0}.", e.Message);
+                Program.WriteLine("An error occured and installation has been halted with the error: {0}.", e.StackTrace);
             }
         }
     }

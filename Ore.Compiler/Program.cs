@@ -6,6 +6,7 @@ using System.Text;
 using System.Xml;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using Ore.Compiler.Zlib;
 
 namespace Ore.Compiler
 {
@@ -18,44 +19,31 @@ namespace Ore.Compiler
             switch (args.Length)
             {
                 case 0:
-                    New();
+                    New(Directory.GetFiles(Directory.GetCurrentDirectory(), "*.csproj", SearchOption.TopDirectoryOnly).First());
                     break;
                 default:
                     if (args.Contains("--restart"))
                     {
                         File.Delete(".ore");
-                        New();
+                        New(Directory.GetFiles(Directory.GetCurrentDirectory(), "*.csproj", SearchOption.TopDirectoryOnly).First());
                     }
                     if (args.Contains("--project"))
                     {
                         var arg = args.First(a => a.StartsWith("--project="));
                         New(arg.Split('=')[1]);
                     }
+                    if (args.Contains("--pack-only"))
+                    {
+                        New(Directory.GetFiles(Directory.GetCurrentDirectory(), "*.csproj", SearchOption.TopDirectoryOnly).First(), false);
+                    }
                     break;
             }
 
         }
 
-        private static void New(string file = "")
+        private static void New(string f, bool install = true)
         {
-            if (file == "")
-            {
-                var files = Directory.GetFiles(Directory.GetCurrentDirectory(), "*.csproj", SearchOption.AllDirectories);
-                if (files.Length == 0)
-                {
-                    WriteLine("Could not locate a plugin file. Aborting.");
-                    return;
-                }
-                if (files.Length > 1)
-                {
-                    WriteLine("Multiple projects found. Please specify a file with \"--project=project.csproj\".");
-                }
-                else if (file.Length == 1)
-                {
-                    file = files[0];
-                }
-            }
-
+            var file = f.Split('\\').Last();
             CompressionAssistant.CompileSolution(file);
             WriteLine("Compiled solution. Compressing.");
             WriteLine("Compressing library...");
@@ -65,35 +53,26 @@ namespace Ore.Compiler
 
             Ore ore;
             if (!File.Exists(".ore")) CreateNewOre(file, out ore);
-            else UpdateOre(file, out ore);
+            else UpdateOre(out ore);
             ore.Dependencies = CompressionAssistant.CommitDependencies();
             WriteLine("Ore data finished gathering...");
             ore.Persist();
 
-            var buffer = new byte[4096*4096];
-            var fbLength = BitConverter.GetBytes(fileBuffer.Length);
-            var dbLength = BitConverter.GetBytes(dependencyBuffer.Length);
-
-            var pos = 0;
+            var mem = new MemoryStream();
             // write the plugin buffer
             WriteLine("Buffing file data...");
-            Array.Copy(fbLength, 0, buffer, pos, fbLength.Length);
-            pos += fbLength.Length;
-            Array.Copy(fileBuffer, 0, buffer, pos, fileBuffer.Length);
-            pos += fileBuffer.Length;
+            mem.WriteUByteArray(fileBuffer);
 
             // write the compressed dependency buffer
             WriteLine("Buffing dependency data...");
-            Array.Copy(dbLength, 0, buffer, pos, dbLength.Length);
-            pos += dbLength.Length;
-            Array.Copy(dependencyBuffer, 0, buffer, pos, dependencyBuffer.Length);
-            pos += dependencyBuffer.Length;
-            WriteLine("Finished with buffer length of " + pos);
+            mem.WriteUByteArray(dependencyBuffer);
+
+            var buffer = ZlibStream.CompressBuffer(mem.GetBuffer());
 
             File.WriteAllBytes(".filebuf", buffer);
-
-            Decompiler.InstallPlugin(JObject.FromObject(ore), File.ReadAllBytes(".filebuf"));
+            if (!install) return;
             WriteLine("Running install test...");
+            Decompiler.InstallPlugin(ore, File.ReadAllBytes(".filebuf"));
         }
 
         public static void WriteLine(string input, params object[] args)
@@ -107,11 +86,11 @@ namespace Ore.Compiler
             var f = File.Create(".ore");
             f.Dispose();
             ore = new Ore();
-            WriteLine("So we noticed this is a new Ore. Would you like to keep the name " + file.Replace(".sln", "") + "? [y/n]");
+            WriteLine("So we noticed this is a new Ore. Would you like to keep the name " + file.Replace(".csproj", "") + "? [y/n]");
             switch (Console.ReadKey().KeyChar)
             {
                 case 'y':
-                    ore.Name = file.Replace(".sln", "");
+                    ore.Name = file.Replace(".csproj", "");
                     break;
                 case 'n':
                     WriteLine("Ok, what would you like to name this?");
@@ -173,11 +152,11 @@ namespace Ore.Compiler
             #endregion
         }
 
-        private static void UpdateOre(string file, out Ore ore)
+        private static void UpdateOre(out Ore ore)
         {
             ore = Ore.GetPrevious();
             WriteLine("Updating the Ore \"{0}\"...", ore.Name);
-            WriteLine("The last version was {0}.{1}.{2}. Would you like to increment it?");
+            WriteLine("The last version was {0}.{1}.{2}. Would you like to increment it?", ore.MajorVersion, ore.MinorVersion, ore.BuildVersion);
             if (Console.ReadKey().KeyChar == 'y')
             {
                 WriteLine("Ok. What's the new version?");

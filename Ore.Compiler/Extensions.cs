@@ -12,7 +12,7 @@ namespace Ore.Compiler
     {
         public static byte ReadUByte(this Stream stream)
         {
-            int value = stream.ReadByte();
+            var value = stream.ReadByte();
 
             return (byte)value;
         }

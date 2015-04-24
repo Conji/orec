@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Xml;
 using Newtonsoft.Json.Linq;
 using Ore.Compiler.Zlib;
@@ -16,7 +17,6 @@ namespace Ore.Compiler
         {
             Program.WriteLine("Compiling " + solutionfile + "...");
             Process.Start("C:\\Windows\\Microsoft.NET\\Framework\\v4.0.30319\\msbuild.exe", solutionfile + ".sln /p:Configuration=Release");
-            
         }
 
         public static byte[] CompressExecutable()
@@ -24,33 +24,14 @@ namespace Ore.Compiler
             var name = GetPluginAssemblyName() + ".dll";
             using (var stream = new MemoryStream())
             {
-                string file;
-                var files =
-                    Directory.EnumerateFiles(
-                        Directory.GetCurrentDirectory() + 
-                        (Directory.GetFiles(Directory.GetCurrentDirectory()).All(f => !f.EndsWith(".csproj")) ? ("\\" + GetPluginAssemblyName()) : "") + 
-                        "\\bin\\" + GetBuildType() + 
-                        "\\", "*.dll", 
-                        SearchOption.AllDirectories)
-                        .ToArray();
-                if (files.Length == 0)
-                {
-                    throw new FileNotFoundException();
-                }
-                if (files.Length > 1)
-                {
-                    var t = files.FirstOrDefault(f => f.Contains("Release"));
-                    file = t ?? files.First();
-                }
-                else file = files[0];
+                var file = Directory.GetCurrentDirectory() + "\\bin\\" + GetBuildType() + "\\" + name;
                 var bytes = File.ReadAllBytes(file);
                 var temp = new MemoryStream();
-                temp.WriteString(name); // write length of name 
                 temp.WriteUByteArray(bytes); // write library
-                stream.WriteInt((int)temp.Position); // write length of content
+                stream.WriteInt(temp.GetBuffer().Length); // write length of content
                 stream.WriteUByteArray(temp.GetBuffer()); // write library
                 temp.Flush();
-                return ZlibStream.CompressBuffer(stream.GetBuffer());
+                return stream.GetBuffer();
             }
             
         }
@@ -60,23 +41,20 @@ namespace Ore.Compiler
             var dependencies = CommitDependencies();
             using (var stream = new MemoryStream())
             {
-                stream.WriteUByte((byte)dependencies.Count);
                 foreach (var dep in dependencies)
                 {
                     var file = Directory.GetCurrentDirectory() + "\\bin\\" + GetBuildType() + "\\" + dep;
                     Program.WriteLine("Compress dependency \"" + dep + "\"...");
                     var buffer = File.ReadAllBytes(file);
-                    var name = dep.ToString();
                     var temp = new MemoryStream();
 
-                    temp.WriteString(name);
                     temp.WriteUByteArray(buffer);
-                    stream.WriteInt((int)temp.Position);
+                    stream.WriteInt(temp.GetBuffer().Length);
                     stream.WriteUByteArray(temp.GetBuffer());
                     temp.Flush();
                 }
                 Program.WriteLine("Compressed " + CommitDependencies().Count + " dependencies into buffer.");
-                return ZlibStream.CompressBuffer(stream.GetBuffer());
+                return stream.GetBuffer();
             }
         }
 
