@@ -3,6 +3,9 @@ using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Xml;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace Ore.Compiler
 {
@@ -23,47 +26,39 @@ namespace Ore.Compiler
                         File.Delete(".ore");
                         New();
                     }
+                    if (args.Contains("--project"))
+                    {
+                        var arg = args.First(a => a.StartsWith("--project="));
+                        New(arg.Split('=')[1]);
+                    }
                     break;
             }
 
         }
 
-        private static void New()
+        private static void New(string file = "")
         {
-            var files = Directory.GetFiles(Directory.GetCurrentDirectory(), "*.sln");
-            if (files.Length == 0)
+            if (file == "")
             {
-                WriteLine("No solutions found inside directory.");
-                return;
-            }
-            string file;
-            if (files.Length > 1)
-            {
-                WriteLine("Multiple solutions found. Which do we use?");
-                var index = 0;
-                foreach (var f in files)
+                var files = Directory.GetFiles(Directory.GetCurrentDirectory(), "*.csproj", SearchOption.AllDirectories);
+                if (files.Length == 0)
                 {
-                    WriteLine("[{0}] - {1}", index, f);
-                    index++;
-                }
-                var response = int.Parse(Console.ReadKey().KeyChar.ToString());
-                if (response > index)
-                {
-                    WriteLine("Error: no index of " + response);
+                    WriteLine("Could not locate a plugin file. Aborting.");
                     return;
                 }
-                file = files[index];
-            }
-            else
-            {
-                file = files[0];
+                if (files.Length > 1)
+                {
+                    WriteLine("Multiple projects found. Please specify a file with \"--project=project.csproj\".");
+                }
+                else if (file.Length == 1)
+                {
+                    file = files[0];
+                }
             }
 
-            file = file.Split('\\')[file.Split('\\').Length - 1];
-
-            WriteLine("Compiled solution. Compressing.");
             CompressionAssistant.CompileSolution(file);
-            WriteLine("Compressing executable...");
+            WriteLine("Compiled solution. Compressing.");
+            WriteLine("Compressing library...");
             var fileBuffer = CompressionAssistant.CompressExecutable();
             WriteLine("Compressing dependencies...");
             var dependencyBuffer = CompressionAssistant.CompressDependencies();
@@ -96,6 +91,9 @@ namespace Ore.Compiler
             WriteLine("Finished with buffer length of " + pos);
 
             File.WriteAllBytes(".filebuf", buffer);
+
+            Decompiler.InstallPlugin(JObject.FromObject(ore), File.ReadAllBytes(".filebuf"));
+            WriteLine("Running install test...");
         }
 
         public static void WriteLine(string input, params object[] args)

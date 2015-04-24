@@ -52,6 +52,7 @@
     <Compile Include="CompressionAssistant.cs" />
     <Compile Include="CredentialManager.cs" />
     <Compile Include="Decompiler.cs" />
+    <Compile Include="Extensions.cs" />
     <Compile Include="Ore.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
